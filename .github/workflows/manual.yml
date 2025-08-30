@@ -1,58 +1,60 @@
-name: Generate M3U List
+# Bu GitHub Actions iş akışının adı
+name: Generate M3U Lists
 
 on:
+  # Zamanlanmış görev: 12 saatte bir otomatik olarak çalışır
   schedule:
-    - cron: '0 */12 * * *' # 12 saatte bir otomatik
-  workflow_dispatch:      # Manuel tetikleme için
+    - cron: '0 */12 * * *'
+  # Manuel tetikleme: GitHub'ın Actions sekmesinden elle çalıştırılabilir
+  workflow_dispatch:
 
 jobs:
   build:
+    # Görevin çalışacağı sanal makine
     runs-on: ubuntu-latest
     
-    # YENİ: Depoya yazma izni ekler. Bu, "permission denied" hatasını çözer.
+    # Depoya yazma izni. Bu olmadan 'git push' başarısız olur.
     permissions:
       contents: write
 
     steps:
-    # Bu adımda bir değişiklik yok
-    - name: Checkout
+    # 1. Adım: Depodaki kodları sanal makineye indirir
+    - name: Checkout Repository
       uses: actions/checkout@v4
 
-    # Bu adımda bir değişiklik yok
+    # 2. Adım: Belirtilen PHP sürümünü kurar
     - name: Setup PHP
       uses: shivammathur/setup-php@v2
       with:
         php-version: '8.2'
 
-    # Bu adımda bir değişiklik yok, m3u dosyanız burada oluşturuluyor
-    - name: Run generator
-      run: php m3u-generator.php
-
-    # GÜNCELLENDİ: Bu adım artık daha akıllı ve hataya dayanıklı
-    - name: Commit & Push output
+    # 3. Adım: Üç PHP betiğini de sırayla çalıştırır
+    - name: Run PHP Generators
       run: |
-        # Git kullanıcı bilgilerini ayarla
+        php canli_tv.php
+        php filmler.php
+        php diziler.php
+
+    # 4. Adım: Oluşturulan dosyaları kontrol eder ve değişiklik varsa depoya gönderir
+    - name: Commit & Push if Changes
+      run: |
+        # Git işlemleri için bot kullanıcısını yapılandır
         git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git config --global user.name "github-actions[bot]"
         
-        # 1. KONTROL: 'm3u-generator.php' scripti 'output.m3u' dosyasını oluşturdu mu?
-        # Eğer dosya yoksa, mesaj yaz ve hatasız çık.
-        if [ ! -f "output.m3u" ]; then
-          echo "output.m3u dosyası 'm3u-generator.php' tarafından oluşturulmadı. İşlem yapılmayacak."
-          exit 0
-        fi
-
-        # Dosya varsa, git'e ekle
-        git add output.m3u
+        # Oluşturulan M3U dosyalarını 'staging' alanına ekle.
+        # Dosyalardan biri veya hepsi oluşturulmamışsa bu komut hata vermez.
+        git add canli_tv.m3u filmler.m3u diziler.m3u
         
-        # 2. KONTROL: Dosyanın içeriğinde bir önceki sürüme göre değişiklik var mı?
-        # Eğer değişiklik yoksa, mesaj yaz ve hatasız çık.
+        # Değişiklik olup olmadığını kontrol et.
+        # Eğer 'staging' alanında hiçbir değişiklik yoksa (dosyalar aynıysa veya hiç oluşmadıysa),
+        # komut sessizce başarılı olur ve sonraki adıma geçmez.
         if git diff --staged --quiet; then
-          echo "Mevcut M3U listesinde değişiklik bulunamadı."
+          echo "Mevcut M3U listelerinde değişiklik bulunamadı. Commit atılmayacak."
           exit 0
         fi
         
-        # Sadece hem dosya varsa hem de içinde değişiklik varsa commit at ve push yap
+        # Eğer değişiklik varsa, commit at ve ana dala (main/master) push'la.
         echo "Değişiklikler bulundu, depoya gönderiliyor..."
-        git commit -m "Update M3U output [skip ci]"
+        git commit -m "Update M3U lists [skip ci]"
         git push
