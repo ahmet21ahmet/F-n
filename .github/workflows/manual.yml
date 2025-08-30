@@ -1,45 +1,49 @@
-# .github/workflows/main.yml dosyanızın içeriği buna benzer olmalı
+
+# .github/workflows/main.yml dosyanızın içeriği
 
 name: Otomatik M3U Oluşturucu
 
-# İş akışının ne zaman çalışacağını belirleyen tetikleyiciler
 on:
   push:
-    branches: [ "main" ] # Sadece main branch'e push yapıldığında çalışır
+    branches: [ "main" ]
   schedule:
-    # Örneğin her gün belirli bir saatte çalışması için
     - cron: '0 5 * * *'
-  workflow_dispatch: # Manuel olarak çalıştırma imkanı sunar
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    # --- HATA ÇÖZÜMÜ ---
-    # Buradaki bölüm, iş akışına depoya yazma (içerik değiştirme) izni verir.
-    # Ekran görüntüsündeki 403 hatasını çözmek için bu satırları eklemelisiniz.
+    # Depoya yazma izni (bir önceki hata için eklenmişti, kalmalı)
     permissions:
       contents: write
 
     steps:
-      # Depodaki kodları sunucuya indirir
+      # 1. Depodaki kodları sunucuya indirir
       - uses: actions/checkout@v3
 
-      # Gerekli diğer adımlarınız (örneğin build, test vb.)
-      # - name: Setup Python
-      #   uses: actions/setup-python@v3
-      #   with:
-      #     python-version: '3.x'
-      # - name: Run script
-      #   run: python your_script.py
+      # 2. BURAYA DİKKAT:
+      # output.m3u dosyasını oluşturan veya güncelleyen komutlarınız
+      # bu adımda yer almalıdır. Örneğin:
+      # - name: M3U dosyasını oluştur
+      #   run: python ./scripts/generate_m3u.py
 
-      # Değişiklikleri Git'e ekleyip depoya gönderme adımı
+      # 3. Değişiklikleri kontrol et, commit at ve push yap
       - name: Değişiklikleri Commit ve Push yap
         run: |
-          git config --global user.email "github-actions@users.noreply.github.com"
-          git config --global user.name "github-actions"
-          # Sadece output.m3u dosyasını eklemek daha güvenli olabilir
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          
+          # Oluşturulan dosyayı ekle
           git add output.m3u
-          # Eğer dosya değişmemişse hata vermemesi için "|| exit 0" eklenebilir
-          git commit -m "Update M3U output [skip ci]" || echo "Değişiklik yok"
+          
+          # Git'in izlediği dosyalarda bir değişiklik olup olmadığını kontrol et
+          # Eğer değişiklik yoksa, sonraki komutları çalıştırma ve işi bitir.
+          if git diff --staged --quiet; then
+            echo "Değişiklik bulunamadı, çıkılıyor."
+            exit 0
+          fi
+          
+          # Sadece değişiklik varsa commit at ve push yap
+          git commit -m "Otomatik M3U çıktısını güncelle [skip ci]"
           git push
