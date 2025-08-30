@@ -1,49 +1,61 @@
-
-# .github/workflows/main.yml dosyanızın içeriği
+# .github/workflows/main.yml dosyanızın tam içeriği bu olmalı
 
 name: Otomatik M3U Oluşturucu
 
 on:
+  # İş akışının ne zaman çalışacağını belirleyen tetikleyiciler
   push:
     branches: [ "main" ]
   schedule:
+    # Her gün sabah 5'te çalışır (örnektir, istediğiniz gibi değiştirin)
     - cron: '0 5 * * *'
+  # GitHub arayüzünden manuel olarak çalıştırma imkanı sunar
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    # Depoya yazma izni (bir önceki hata için eklenmişti, kalmalı)
+    # Depoya yazma (push) izni vermek için bu bölüm zorunludur
     permissions:
       contents: write
 
     steps:
-      # 1. Depodaki kodları sunucuya indirir
+      # 1. Adım: Depodaki mevcut kodları sunucuya indirir
       - uses: actions/checkout@v3
 
-      # 2. BURAYA DİKKAT:
-      # output.m3u dosyasını oluşturan veya güncelleyen komutlarınız
-      # bu adımda yer almalıdır. Örneğin:
-      # - name: M3U dosyasını oluştur
-      #   run: python ./scripts/generate_m3u.py
+      # 2. Adım: output.m3u dosyasını oluşturur veya günceller
+      # BU ADIM SORUNUNUZU ÇÖZÜYOR
+      - name: M3U Dosyasını Oluştur/Güncelle
+        run: |
+          # --- ÖNEMLİ: LÜTFEN BU BÖLÜMÜ DEĞİŞTİRİN ---
+          # Aşağıdaki komutlar, örnek bir M3U dosyası oluşturur.
+          # Siz bu satırları silip, kendi M3U içeriğinizi üreten
+          # komutlarınızı veya script'inizi (örneğin: `python generate_m3u.py`) buraya eklemelisiniz.
+          echo "#EXTM3U" > output.m3u
+          echo "#EXTINF:-1,Örnek Kanal 1" >> output.m3u
+          echo "http://ornek.tv/stream1" >> output.m3u
+          echo "#EXTINF:-1,Örnek Kanal 2" >> output.m3u
+          echo "http://ornek.tv/stream2" >> output.m3u
+          
+          echo "output.m3u dosyası başarıyla oluşturuldu/güncellendi."
 
-      # 3. Değişiklikleri kontrol et, commit at ve push yap
+      # 3. Adım: Yapılan değişiklikleri depoya commit'ler ve push'lar
       - name: Değişiklikleri Commit ve Push yap
         run: |
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
           
-          # Oluşturulan dosyayı ekle
           git add output.m3u
           
-          # Git'in izlediği dosyalarda bir değişiklik olup olmadığını kontrol et
-          # Eğer değişiklik yoksa, sonraki komutları çalıştırma ve işi bitir.
+          # Eğer dosya oluşturuldu ama içerik bir öncekiyle aynıysa
+          # (yani değişiklik yoksa), hata vermeden işlemi bitir.
           if git diff --staged --quiet; then
-            echo "Değişiklik bulunamadı, çıkılıyor."
+            echo "Mevcut M3U listesinde değişiklik bulunamadı. İşlem yapılmayacak."
             exit 0
           fi
           
-          # Sadece değişiklik varsa commit at ve push yap
-          git commit -m "Otomatik M3U çıktısını güncelle [skip ci]"
+          # Sadece değişiklik varsa commit atar ve ana dala (main) gönderir.
+          echo "Değişiklikler bulundu, depoya gönderiliyor..."
+          git commit -m "Otomatik M3U çıktısını oluştur/güncelle [skip ci]"
           git push
