@@ -1,5 +1,6 @@
 <?php
-// Bu betik sadece DİZİLERİ çeker ve diziler.m3u dosyasına yazar.
+// Bu betik, GitHub Actions ile uyumlu olacak şekilde sadece çalıştığı bilinen
+// "Son Diziler" API'sini kullanarak dizileri çeker ve diziler.m3u dosyasına yazar.
 
 // --- BAŞLANGIÇ: Ortak Ayarlar ---
 // Varsayılanlar (ikinci ihtimal)
@@ -54,43 +55,38 @@ $context = stream_context_create($options);
 
 // M3U Çıktısı Oluştur
 $m3uContent = "#EXTM3U\n";
+$foundSeriesCount = 0;
 
 // DİZİLERİ ÇEK
 echo "Diziler çekiliyor...\n";
-$seriesApis = [
-    "api/serie/by/filtres/0/created/SAYFA/$suffix"   => "Son Diziler",
-    "api/serie/by/filtres/14/created/SAYFA/$suffix"  => "Aile Dizileri",
-    "api/serie/by/filtres/1/created/SAYFA/$suffix"   => "Aksiyon Dizileri",
-    "api/serie/by/filtres/13/created/SAYFA/$suffix"  => "Animasyon Dizileri",
-    "api/serie/by/filtres/19/created/SAYFA/$suffix"  => "Belgesel Dizileri",
-    "api/serie/by/filtres/4/created/SAYFA/$suffix"   => "Bilim Kurgu Dizileri",
-    "api/serie/by/filtres/2/created/SAYFA/$suffix"   => "Dram Dizileri",
-    "api/serie/by/filtres/10/created/SAYFA/$suffix"  => "Fantastik Diziler",
-    "api/serie/by/filtres/3/created/SAYFA/$suffix"   => "Komedi Dizileri",
-    "api/serie/by/filtres/8/created/SAYFA/$suffix"   => "Korku Dizileri",
-    "api/serie/by/filtres/17/created/SAYFA/$suffix"  => "Macera Dizileri",
-    "api/serie/by/filtres/5/created/SAYFA/$suffix"   => "Romantik Diziler",
-];
-foreach ($seriesApis as $seriesApi => $categoryName) {
-    echo "- '$categoryName' kategorisi işleniyor...\n";
-    for ($page = 0; $page <= 25; $page++) {
-        $apiUrl = $baseUrl . '/' . str_replace('SAYFA', $page, $seriesApi);
-        $response = @file_get_contents($apiUrl, false, $context);
-        if ($response === FALSE) continue;
-        $data = json_decode($response, true);
-        if ($data === null) continue;
 
-        foreach ($data as $content) {
-            if (isset($content['sources']) && is_array($content['sources'])) {
-                foreach ($content['sources'] as $source) {
-                    if (($source['type'] ?? '') === 'm3u8' && isset($source['url'])) {
-                        $title = $content['title'] ?? '';
-                        $image = isset($content['image']) ? ((strpos($content['image'], 'http') === 0) ? $content['image'] : $baseUrl . '/' . ltrim($content['image'], '/')) : '';
-                        $m3uContent .= "#EXTINF:-1 tvg-id=\"{$content['id']}\" tvg-name=\"$title\" tvg-logo=\"$image\" group-title=\"$categoryName\", $title\n";
-                        $m3uContent .= "#EXTVLCOPT:http-user-agent=googleusercontent\n";
-                        $m3uContent .= "#EXTVLCOPT:http-referrer=https://twitter.com/\n";
-                        $m3uContent .= "{$source['url']}\n";
-                    }
+// SADECE ÇALIŞTIĞI BİLİNEN API KULLANILIR
+$seriesApi = "api/serie/by/filtres/0/created/SAYFA/$suffix";
+$categoryName = "Diziler"; // Tek kategori olduğu için genel bir isim veriyoruz
+
+// Daha fazla içerik çekmek için sayfa sayısını artırıyoruz (örneğin 50 sayfa)
+for ($page = 0; $page <= 50; $page++) {
+    $apiUrl = $baseUrl . '/' . str_replace('SAYFA', $page, $seriesApi);
+    $response = @file_get_contents($apiUrl, false, $context);
+    
+    if ($response === FALSE) continue;
+    $data = json_decode($response, true);
+    if ($data === null || empty($data)) {
+        // Bu sayfada veri yoksa, muhtemelen daha fazla sayfa da yoktur. Döngüyü kır.
+        break;
+    }
+
+    foreach ($data as $content) {
+        if (isset($content['sources']) && is_array($content['sources'])) {
+            foreach ($content['sources'] as $source) {
+                if (($source['type'] ?? '') === 'm3u8' && isset($source['url'])) {
+                    $title = $content['title'] ?? '';
+                    $image = isset($content['image']) ? ((strpos($content['image'], 'http') === 0) ? $content['image'] : $baseUrl . '/' . ltrim($content['image'], '/')) : '';
+                    $m3uContent .= "#EXTINF:-1 tvg-id=\"{$content['id']}\" tvg-name=\"$title\" tvg-logo=\"$image\" group-title=\"$categoryName\", $title\n";
+                    $m3uContent .= "#EXTVLCOPT:http-user-agent=googleusercontent\n";
+                    $m3uContent .= "#EXTVLCOPT:http-referrer=https://twitter.com/\n";
+                    $m3uContent .= "{$source['url']}\n";
+                    $foundSeriesCount++;
                 }
             }
         }
@@ -98,6 +94,10 @@ foreach ($seriesApis as $seriesApi => $categoryName) {
 }
 
 // Dosyaya kaydet
-file_put_contents('diziler.m3u', $m3uContent);
-echo "Diziler için M3U dosyası oluşturuldu: diziler.m3u\n";
+if ($foundSeriesCount > 0) {
+    file_put_contents('diziler.m3u', $m3uContent);
+    echo "İşlem tamamlandı. Toplam $foundSeriesCount adet dizi bulundu ve 'diziler.m3u' dosyası oluşturuldu/güncellendi.\n";
+} else {
+    echo "Uyarı: Hiç dizi bulunamadı. 'diziler.m3u' dosyası oluşturulmadı.\n";
+}
 ?>
