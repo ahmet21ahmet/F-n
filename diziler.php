@@ -1,87 +1,109 @@
 <?php
-// Bu betik, GitHub Actions ile uyumlu olacak şekilde sadece çalıştığı bilinen
-// "Son Diziler" API'sini kullanarak dizileri çeker ve diziler.m3u dosyasına yazar.
+// Bu betik, birden çok yedek API URL'sini test ederek çalışacak şekilde tasarlanmıştır.
 
 // --- BAŞLANGIÇ: Ortak Ayarlar ---
-// Varsayılanlar (ikinci ihtimal)
-$defaultBaseUrl = 'https://m.prectv49.sbs';
+// YENİ: Yedek URL listesi. En yeni veya en olası olanı en başa yazmak iyi bir pratiktir.
+$fallbackBaseUrls = [
+    'https://m.prectv52.lol',
+    'https://m.prectv52.sbs',
+    'https://m.prectv51.sbs',
+    'https://m.prectv50.sbs',
+    'https://m.prectv49.sbs' 
+];
 $defaultSuffix = '4F5A9C3D9A86FA54EACEDDD635185/c3c5bd17-e37b-4b94-a944-8a3688a30452/';
 $defaultUserAgent = 'Dart/3.7 (dart:io)';
 $defaultReferer = 'https://twitter.com/';
 
-// Github kaynak dosyası (ilk ihtimal)
+// Github kaynak dosyası (en güncel veriler için ilk tercih)
 $sourceUrlRaw = 'https://raw.githubusercontent.com/kerimmkirac/cs-kerim2/main/RecTV/src/main/kotlin/com/kerimmkirac/RecTV.kt';
 $proxyUrl = 'https://api.codetabs.com/v1/proxy/?quest=' . urlencode($sourceUrlRaw);
 
-// Güncel değerlerin tutulacağı değişkenler
-$baseUrl    = $defaultBaseUrl;
-$suffix     = $defaultSuffix;
-$userAgent  = $defaultUserAgent;
-$referer    = $defaultReferer;
+// Değişkenler
+$suffix = $defaultSuffix;
+$userAgent = $defaultUserAgent;
+$referer = $defaultReferer;
+$activeBaseUrl = ''; // YENİ: Çalışan URL bu değişkende saklanacak.
 
-// Github içeriğini çekmek için fonksiyon
 function fetchGithubContent($sourceUrlRaw, $proxyUrl) {
-    $githubContent = @file_get_contents($sourceUrlRaw);
+    $contextOptions = ['http' => ['timeout' => 7]];
+    $context = stream_context_create($contextOptions);
+    $githubContent = @file_get_contents($sourceUrlRaw, false, $context);
     if ($githubContent !== FALSE) return $githubContent;
-    return @file_get_contents($proxyUrl);
+    return @file_get_contents($proxyUrl, false, $context);
 }
 
+function isApiWorking($baseUrl, $suffix, $userAgent) {
+    $testUrl = $baseUrl . '/api/channel/by/filtres/0/0/0/' . $suffix;
+    $opts = ['http' => ['header' => "User-Agent: $userAgent\r\n", 'timeout' => 5]];
+    $ctx = stream_context_create($opts);
+    $response = @file_get_contents($testUrl, false, $ctx);
+    return $response !== FALSE && !empty($response);
+}
+
+// YENİ: Çalışan ilk URL'yi bulma mantığı
+echo "Çalışan bir API URL'si aranıyor...\n";
 $githubContent = fetchGithubContent($sourceUrlRaw, $proxyUrl);
 
-// Regex ile değerleri çek
+$githubBaseUrl = '';
 if ($githubContent !== FALSE) {
-    if (preg_match('/override\s+var\s+mainUrl\s*=\s*"([^"]+)"/', $githubContent, $m)) $baseUrl = $m[1];
+    if (preg_match('/override\s+var\s+mainUrl\s*=\s*"([^"]+)"/', $githubContent, $m)) $githubBaseUrl = $m[1];
     if (preg_match('/private\s+val\s+swKey\s*=\s*"([^"]+)"/', $githubContent, $m)) $suffix = $m[1];
     if (preg_match('/user-agent"\s*to\s*"([^"]+)"/', $githubContent, $m)) $userAgent = $m[1];
     if (preg_match('/Referer"\s*to\s*"([^"]+)"/', $githubContent, $m)) $referer = $m[1];
 }
 
-// URL'nin çalışıp çalışmadığını kontrol et
-function isBaseUrlWorking($baseUrl, $suffix, $userAgent) {
-    $testUrl = $baseUrl . '/api/channel/by/filtres/0/0/0/' . $suffix;
-    $opts = ['http' => ['header' => "User-Agent: $userAgent\r\n"]];
-    $ctx = stream_context_create($opts);
-    return @file_get_contents($testUrl, false, $ctx) !== FALSE;
-}
-if (!isBaseUrlWorking($baseUrl, $suffix, $userAgent)) {
-    $baseUrl = $defaultBaseUrl;
-    $suffix = $defaultSuffix;
+// 1. Önce Github'dan geleni dene
+if (!empty($githubBaseUrl) && isApiWorking($githubBaseUrl, $suffix, $userAgent)) {
+    $activeBaseUrl = $githubBaseUrl;
+    echo "Başarılı: Github'dan alınan güncel API URL'si çalışıyor: $activeBaseUrl\n";
+} else {
+    echo "Bilgi: Github'dan alınan URL çalışmıyor veya alınamadı. Yedekler deneniyor...\n";
+    // 2. Yedek listesini dene
+    foreach ($fallbackBaseUrls as $fallbackUrl) {
+        echo "  -> Deneniyor: $fallbackUrl\n";
+        if (isApiWorking($fallbackUrl, $suffix, $userAgent)) {
+            $activeBaseUrl = $fallbackUrl;
+            echo "Başarılı: Çalışan yedek API URL'si bulundu: $activeBaseUrl\n";
+            break; // Çalışan ilk URL'yi bulduk, döngüden çık.
+        }
+    }
 }
 
-// API çağrıları için HTTP context oluştur
-$options = ['http' => ['header' => "User-Agent: $userAgent\r\nReferer: $referer\r\n"]];
+// Hiçbir URL çalışmazsa betiği durdur.
+if (empty($activeBaseUrl)) {
+    echo "HATA: Çalışan hiçbir API URL'si bulunamadı. Betik durduruluyor.\n";
+    exit(1); // Hata koduyla çık
+}
+
+$options = ['http' => ['header' => "User-Agent: $userAgent\r\nReferer: $referer\r\n", 'timeout' => 10]];
 $context = stream_context_create($options);
 // --- BİTİŞ: Ortak Ayarlar ---
 
-// M3U Çıktısı Oluştur
 $m3uContent = "#EXTM3U\n";
 $foundSeriesCount = 0;
 
-// DİZİLERİ ÇEK
 echo "Diziler çekiliyor...\n";
-
-// SADECE ÇALIŞTIĞI BİLİNEN API KULLANILIR
 $seriesApi = "api/serie/by/filtres/0/created/SAYFA/$suffix";
-$categoryName = "Diziler"; // Tek kategori olduğu için genel bir isim veriyoruz
+$categoryName = "Diziler";
 
-// Daha fazla içerik çekmek için sayfa sayısını artırıyoruz (örneğin 50 sayfa)
 for ($page = 0; $page <= 50; $page++) {
-    $apiUrl = $baseUrl . '/' . str_replace('SAYFA', $page, $seriesApi);
+    $apiUrl = $activeBaseUrl . '/' . str_replace('SAYFA', $page, $seriesApi);
     $response = @file_get_contents($apiUrl, false, $context);
     
-    if ($response === FALSE) continue;
-    $data = json_decode($response, true);
-    if ($data === null || empty($data)) {
-        // Bu sayfada veri yoksa, muhtemelen daha fazla sayfa da yoktur. Döngüyü kır.
+    if ($response === FALSE || empty(json_decode($response, true))) {
+        echo "Bilgi: Sayfa $page için veri alınamadı veya boş. İşlem sonlandırılıyor.\n";
         break;
     }
+    
+    $data = json_decode($response, true);
+    echo "Sayfa $page bulundu, " . count($data) . " içerik işleniyor...\n";
 
     foreach ($data as $content) {
         if (isset($content['sources']) && is_array($content['sources'])) {
             foreach ($content['sources'] as $source) {
                 if (($source['type'] ?? '') === 'm3u8' && isset($source['url'])) {
-                    $title = $content['title'] ?? '';
-                    $image = isset($content['image']) ? ((strpos($content['image'], 'http') === 0) ? $content['image'] : $baseUrl . '/' . ltrim($content['image'], '/')) : '';
+                    $title = $content['title'] ?? 'Baslik Yok';
+                    $image = isset($content['image']) ? ((strpos($content['image'], 'http') === 0) ? $content['image'] : $activeBaseUrl . '/' . ltrim($content['image'], '/')) : '';
                     $m3uContent .= "#EXTINF:-1 tvg-id=\"{$content['id']}\" tvg-name=\"$title\" tvg-logo=\"$image\" group-title=\"$categoryName\", $title\n";
                     $m3uContent .= "#EXTVLCOPT:http-user-agent=googleusercontent\n";
                     $m3uContent .= "#EXTVLCOPT:http-referrer=https://twitter.com/\n";
@@ -93,11 +115,10 @@ for ($page = 0; $page <= 50; $page++) {
     }
 }
 
-// Dosyaya kaydet
 if ($foundSeriesCount > 0) {
     file_put_contents('diziler.m3u', $m3uContent);
-    echo "İşlem tamamlandı. Toplam $foundSeriesCount adet dizi bulundu ve 'diziler.m3u' dosyası oluşturuldu/güncellendi.\n";
+    echo "İşlem tamamlandı. Toplam $foundSeriesCount adet dizi bulundu ve 'diziler.m3u' dosyası oluşturuldu.\n";
 } else {
-    echo "Uyarı: Hiç dizi bulunamadı. 'diziler.m3u' dosyası oluşturulmadı.\n";
+    echo "Uyarı: API'den hiç dizi verisi alınamadı. 'diziler.m3u' dosyası oluşturulmadı.\n";
 }
 ?>
