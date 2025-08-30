@@ -1,61 +1,58 @@
-# .github/workflows/main.yml dosyanızın tam içeriği bu olmalı
-
-name: Otomatik M3U Oluşturucu
+name: Generate M3U List
 
 on:
-  # İş akışının ne zaman çalışacağını belirleyen tetikleyiciler
-  push:
-    branches: [ "main" ]
   schedule:
-    # Her gün sabah 5'te çalışır (örnektir, istediğiniz gibi değiştirin)
-    - cron: '0 5 * * *'
-  # GitHub arayüzünden manuel olarak çalıştırma imkanı sunar
-  workflow_dispatch:
+    - cron: '0 */12 * * *' # 12 saatte bir otomatik
+  workflow_dispatch:      # Manuel tetikleme için
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    # Depoya yazma (push) izni vermek için bu bölüm zorunludur
+    
+    # YENİ: Depoya yazma izni ekler. Bu, "permission denied" hatasını çözer.
     permissions:
       contents: write
 
     steps:
-      # 1. Adım: Depodaki mevcut kodları sunucuya indirir
-      - uses: actions/checkout@v3
+    # Bu adımda bir değişiklik yok
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      # 2. Adım: output.m3u dosyasını oluşturur veya günceller
-      # BU ADIM SORUNUNUZU ÇÖZÜYOR
-      - name: M3U Dosyasını Oluştur/Güncelle
-        run: |
-          # --- ÖNEMLİ: LÜTFEN BU BÖLÜMÜ DEĞİŞTİRİN ---
-          # Aşağıdaki komutlar, örnek bir M3U dosyası oluşturur.
-          # Siz bu satırları silip, kendi M3U içeriğinizi üreten
-          # komutlarınızı veya script'inizi (örneğin: `python generate_m3u.py`) buraya eklemelisiniz.
-          echo "#EXTM3U" > output.m3u
-          echo "#EXTINF:-1,Örnek Kanal 1" >> output.m3u
-          echo "http://ornek.tv/stream1" >> output.m3u
-          echo "#EXTINF:-1,Örnek Kanal 2" >> output.m3u
-          echo "http://ornek.tv/stream2" >> output.m3u
-          
-          echo "output.m3u dosyası başarıyla oluşturuldu/güncellendi."
+    # Bu adımda bir değişiklik yok
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.2'
 
-      # 3. Adım: Yapılan değişiklikleri depoya commit'ler ve push'lar
-      - name: Değişiklikleri Commit ve Push yap
-        run: |
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
-          
-          git add output.m3u
-          
-          # Eğer dosya oluşturuldu ama içerik bir öncekiyle aynıysa
-          # (yani değişiklik yoksa), hata vermeden işlemi bitir.
-          if git diff --staged --quiet; then
-            echo "Mevcut M3U listesinde değişiklik bulunamadı. İşlem yapılmayacak."
-            exit 0
-          fi
-          
-          # Sadece değişiklik varsa commit atar ve ana dala (main) gönderir.
-          echo "Değişiklikler bulundu, depoya gönderiliyor..."
-          git commit -m "Otomatik M3U çıktısını oluştur/güncelle [skip ci]"
-          git push
+    # Bu adımda bir değişiklik yok, m3u dosyanız burada oluşturuluyor
+    - name: Run generator
+      run: php m3u-generator.php
+
+    # GÜNCELLENDİ: Bu adım artık daha akıllı ve hataya dayanıklı
+    - name: Commit & Push output
+      run: |
+        # Git kullanıcı bilgilerini ayarla
+        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git config --global user.name "github-actions[bot]"
+        
+        # 1. KONTROL: 'm3u-generator.php' scripti 'output.m3u' dosyasını oluşturdu mu?
+        # Eğer dosya yoksa, mesaj yaz ve hatasız çık.
+        if [ ! -f "output.m3u" ]; then
+          echo "output.m3u dosyası 'm3u-generator.php' tarafından oluşturulmadı. İşlem yapılmayacak."
+          exit 0
+        fi
+
+        # Dosya varsa, git'e ekle
+        git add output.m3u
+        
+        # 2. KONTROL: Dosyanın içeriğinde bir önceki sürüme göre değişiklik var mı?
+        # Eğer değişiklik yoksa, mesaj yaz ve hatasız çık.
+        if git diff --staged --quiet; then
+          echo "Mevcut M3U listesinde değişiklik bulunamadı."
+          exit 0
+        fi
+        
+        # Sadece hem dosya varsa hem de içinde değişiklik varsa commit at ve push yap
+        echo "Değişiklikler bulundu, depoya gönderiliyor..."
+        git commit -m "Update M3U output [skip ci]"
+        git push
