@@ -1,0 +1,29 @@
+name: Generate M3U List
+
+on:
+  schedule:
+    - cron: '0 */12 * * *' # 12 saatte bir otomatik
+  workflow_dispatch:      # Manuel tetikleme için
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.2'
+
+    - name: Run generator
+      run: php m3u-generator.php
+
+    - name: Commit & Push output
+      run: |
+        git config --global user.email "github-actions@users.noreply.github.com"
+        git config --global user.name "github-actions"
+        git add output.m3u
+        git commit -m "Update M3U output [skip ci]" || echo "No changes"
+        git push
