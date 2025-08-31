@@ -1,4 +1,4 @@
-name: yeni rectv
+name: Generate M3U Playlists
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ jobs:
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.x' # Python sürümünü belirtmek iyi bir pratiktir
+        python-version: '3.x'
 
     - name: Setup PHP
       uses: shivammathur/setup-php@v2
@@ -24,47 +24,37 @@ jobs:
         php-version: '8.2'
 
     - name: Install Python dependencies
-      run: |
-        pip install requests firebase-admin
+      run: pip install requests firebase-admin
 
-    # Bu adımlar config dosyasını oluşturmak için aynı kalıyor
-    - name: Parse RecTV.kta from YOUR repository
-      run: |
-        python scripts/parse-rec-tv.py
-    
-    - name: Get Firebase config dynamically
+    - name: Create Config Files
       env:
         FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         FIREBASE_UID: ${{ secrets.FIREBASE_UID }}
       run: |
-        python scripts/firebase-auth.py
+        cd scripts
+        python parse-rec-tv.py
+        python firebase-auth.py
+        python get-api-config.py
 
-    - name: Get API config from Firebase
-      run: |
-        python scripts/get-api-config.py
-
-    # --- DEĞİŞİKLİK 1: Yeni PHP betiğini çalıştır ---
     - name: Generate M3U playlists
       run: |
-        echo "M3U playlistleri oluşturuluyor..."
-        # Eski betik yerine yeni betiği çalıştırıyoruz
-        php scripts/generate-m3u.php
-        echo "M3U oluşturma tamamlandı"
+      php scripts/generate-m3u.php
 
-    # --- DEĞİŞİKLİK 2: Oluşturulan üç yeni dosyayı commit et ---
+    # --- DEĞİŞİKLİK: Commit adımı güncellendi ---
     - name: Commit and push M3U playlists
       run: |
-        echo "M3U dosyaları commit ediliyor..."
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         
-        # Eski, artık kullanılmayan dosyayı depodan kaldır (varsa)
-        git rm --ignore-unmatch rectv-playlist.m3u
-        
-        # Yeni oluşturulan üç dosyayı ekle
-        git add canli-tv.m3u filmler.m3u diziler.m3u
-        
-        # Commit mesajını çoğul yapabiliriz
-        git commit -m "Auto-update M3U playlists ($(date +'%Y-%m-%d %H:%M'))" || echo "No changes to commit"
-        git push
-        echo "Commit tamamlandı
+        # Artık kullanılmayan ana dizindeki dosyaları temizle (varsa)
+        git rm --ignore-unmatch canli-tv.m3u filmler.m3u diziler.m3u rectv-playlist.m3u
+
+        # Dosyaların 'scripts' klasöründe var olup olmadığını kontrol et
+        if [ -f "scripts/canli-tv.m3u" ]; then
+          # Dosyaları 'scripts' klasöründen ekle
+          git add scripts/canli-tv.m3u scripts/filmler.m3u scripts/diziler.m3u
+          git commit -m "Auto-update M3U playlists in /scripts ($(date +'%Y-%m-%d %H:%M'))"
+          git push
+        else
+          echo "M3U dosyaları oluşturulmadığı için commit atlanıyor."
+        fi
