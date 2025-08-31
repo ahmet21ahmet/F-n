@@ -1,4 +1,4 @@
-name: Generate M3U Playlists
+name: rec yeni Playlists
 
 on:
   workflow_dispatch:
@@ -38,7 +38,7 @@ jobs:
 
     - name: Generate M3U playlists
       run: |
-      php scripts/generate-m3u.php
+        php scripts/generate-m3u.php
 
     # --- DEĞİŞİKLİK: Commit adımı güncellendi ---
     - name: Commit and push M3U playlists
