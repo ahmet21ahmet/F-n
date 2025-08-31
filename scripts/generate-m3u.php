@@ -1,16 +1,18 @@
 <?php
 // --- Yapılandırma ve Kurulum ---
 
-// Hata raporlamayı etkinleştir (Geliştirme sırasında faydalıdır)
+// Hata raporlamayı etkinleştir ve betik zaman aşımını kaldır
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
+set_time_limit(0);
 
 // Config dosyasını oku
+// __DIR__ betiğin bulunduğu klasörü (/scripts) verir.
 $configFile = __DIR__ . '/final-config.json';
 if (!file_exists($configFile)) {
-    die("HATA: Yapılandırma dosyası bulunamadı: $configFile\n");
+    // final-config.json dosyasının scripts klasöründe olup olmadığını kontrol et
+    die("HATA: Yapılandırma dosyası bulunamadı: $configFile\nLütfen final-config.json dosyasının 'scripts' klasöründe olduğundan emin olun.\n");
 }
-
 $config = json_decode(file_get_contents($configFile), true);
 
 if (!$config || empty($config['mainUrl']) || empty($config['swKey'])) {
@@ -22,9 +24,9 @@ $mainUrl = $config['mainUrl'];
 $swKey = $config['swKey'];
 $userAgent = $config['userAgent'] ?? 'Dart/3.7 (dart:io)';
 $referer = $config['referer'] ?? 'https://www.google.com/';
-$m3uUserAgent = 'googleusercontent'; // M3U çalarlar için özel User-Agent
+$m3uUserAgent = 'googleusercontent';
 
-echo "🎬 Ayrı M3U Listeleri Oluşturucu Başlatılıyor...\n";
+echo "🎬 Gelişmiş M3U Oluşturucu Başlatılıyor...\n";
 echo "🔗 Ana API Adresi: $mainUrl\n\n";
 
 // HTTP istekleri için stream context oluştur
@@ -32,8 +34,8 @@ $context = stream_context_create([
     'http' => [
         'method' => 'GET',
         'header' => "User-Agent: $userAgent\r\nReferer: $referer\r\n",
-        'timeout' => 30, // Zaman aşımı süresini artırdık
-        'ignore_errors' => true // Hatalı yanıtlarda bile içeriği al
+        'timeout' => 45,
+        'ignore_errors' => true
     ],
     'ssl' => [
         'verify_peer' => false,
@@ -41,21 +43,22 @@ $context = stream_context_create([
     ]
 ]);
 
-// Çıktı klasörünü belirle
-$outputDir = __DIR__ . '/../'; // Ana dizine kaydet
+// --- DÜZELTME: Çıktı klasörünü belirle ---
+// getcwd() komutu, betiğin çalıştığı ana dizini (repository root) verir.
+// Bu, dosyaların doğru yere kaydedilmesini garanti eder.
+$outputDir = getcwd() . '/';
+echo "ℹ️ M3U dosyaları şu konuma kaydedilecek: $outputDir\n\n";
 
-// --- İçerik Çekme ve Dosya Oluşturma Fonksiyonları ---
+// --- Yardımcı Fonksiyonlar ---
 
 /**
  * Belirtilen API URL'sinden veri çeker ve JSON olarak çözer.
- * @param string $apiUrl
- * @param resource $context
- * @return array|null
  */
 function fetchData($apiUrl, $context) {
+    echo "   -> İstek gönderiliyor: $apiUrl\n";
     $response = @file_get_contents($apiUrl, false, $context);
     if ($response === FALSE) {
-        echo "   -> Hata: API'ye erişilemedi: $apiUrl\n";
+        echo "   -> Hata: API'ye erişilemedi.\n";
         return null;
     }
     $data = json_decode($response, true);
@@ -68,44 +71,42 @@ function fetchData($apiUrl, $context) {
 
 /**
  * M3U içeriğini dosyaya yazar.
- * @param string $filePath
- * @param string $content
- * @param int $itemCount
  */
-function writeM3UFile($filePath, $content, $itemCount) {
-    file_put_contents($filePath, $content);
-    $fileSize = round(filesize($filePath) / 1024, 2); // KB cinsinden
-    echo "💾 Dosya oluşturuldu: $filePath ($itemCount içerik, {$fileSize} KB)\n\n";
+function writeM3UFile($filePath, $content, $itemCount, $categoryName) {
+    if ($itemCount > 0) {
+        file_put_contents($filePath, $content);
+        if (file_exists($filePath)) {
+            $fileSize = round(filesize($filePath) / 1024, 2); // KB cinsinden
+            echo "✅ $categoryName: Toplam $itemCount içerik listeye eklendi.\n";
+            echo "💾 Dosya başarıyla oluşturuldu: $filePath ({$fileSize} KB)\n\n";
+        } else {
+            echo "❌ HATA: $categoryName dosyası oluşturulamadı! Lütfen izinleri kontrol edin.\n\n";
+        }
+    } else {
+        echo "⚠️ $categoryName: Hiç içerik bulunamadı, bu kategori için dosya oluşturulmadı.\n\n";
+    }
 }
 
-
 // --- 1. CANLI TV LİSTESİ OLUŞTURMA ---
-
-echo "📺 Canlı TV Yayınları Alınıyor...\n";
+echo "--- BÖLÜM 1: CANLI TV YAYINLARI ---\n";
 $liveTvContent = "#EXTM3U\n";
 $totalChannels = 0;
-$maxPages = 15; // Taranacak maksimum sayfa sayısı
-
-for ($page = 0; $page < $maxPages; $page++) {
+for ($page = 0; $page < 15; $page++) {
+    echo " -> Canlı TV Sayfa $page taranıyor...\n";
     $apiUrl = "$mainUrl/api/channel/by/filtres/0/0/$page/$swKey";
-    echo " -> Sayfa $page taranıyor...\n";
-    
     $data = fetchData($apiUrl, $context);
     if (empty($data)) {
         echo "   -> Veri bulunamadı. Canlı TV işlemi tamamlandı.\n";
         break;
     }
-    
-    $pageChannels = 0;
     foreach ($data as $item) {
-        if (isset($item['sources']) && is_array($item['sources'])) {
+        if (!empty($item['sources']) && is_array($item['sources'])) {
             foreach ($item['sources'] as $source) {
                 if (($source['type'] ?? '') === 'm3u8' && !empty($source['url'])) {
-                    $pageChannels++;
+                    $totalChannels++;
                     $title = $item['title'] ?? 'İsimsiz Kanal';
                     $image = $item['image'] ?? '';
                     $categories = isset($item['categories']) ? implode(", ", array_column($item['categories'], 'title')) : 'Genel';
-                    
                     $liveTvContent .= "#EXTINF:-1 tvg-id=\"{$item['id']}\" tvg-name=\"$title\" tvg-logo=\"$image\" group-title=\"$categories\",$title\n";
                     $liveTvContent .= "#EXTVLCOPT:http-user-agent=$m3uUserAgent\n";
                     $liveTvContent .= "#EXTVLCOPT:http-referrer=$referer\n";
@@ -114,45 +115,29 @@ for ($page = 0; $page < $maxPages; $page++) {
             }
         }
     }
-    echo "   -> Bu sayfadan $pageChannels kanal eklendi.\n";
-    $totalChannels += $pageChannels;
 }
-echo "✅ Canlı TV: Toplam $totalChannels kanal listeye eklendi.\n";
-writeM3UFile($outputDir . 'canli-tv.m3u', $liveTvContent, $totalChannels);
-
+writeM3UFile($outputDir . 'canli-tv.m3u', $liveTvContent, $totalChannels, "Canlı TV");
 
 // --- 2. FİLMLER LİSTESİ OLUŞTURMA ---
-
-echo "🎬 Filmler Alınıyor...\n";
+echo "--- BÖLÜM 2: FİLMLER ---\n";
 $moviesContent = "#EXTM3U\n";
 $totalMovies = 0;
-$movieCategories = [
-    "0" => "Tüm Filmler", "14" => "Aile", "1" => "Aksiyon", "13" => "Animasyon",
-    "19" => "Belgesel", "4" => "Bilim Kurgu", "2" => "Dram", "10" => "Fantastik",
-    "3" => "Komedi", "8" => "Korku", "17" => "Macera", "5" => "Romantik"
-];
-$maxPagesPerCategory = 50; // Her kategori için maksimum sayfa
-
+$movieCategories = [ "0" => "Son Eklenenler", "1" => "Aksiyon", "17" => "Macera", "4" => "Bilim Kurgu", "8" => "Korku", "2" => "Dram" ];
 foreach ($movieCategories as $catId => $catName) {
-    echo " -> Kategori: '$catName' taranıyor...\n";
-    for ($page = 0; $page < $maxPagesPerCategory; $page++) {
+    echo " -> Film Kategorisi: '$catName' taranıyor...\n";
+    for ($page = 0; $page < 50; $page++) {
         $apiUrl = "$mainUrl/api/movie/by/filtres/$catId/created/$page/$swKey";
-        
         $data = fetchData($apiUrl, $context);
-        if (empty($data)) {
-            // Veri yoksa sonraki kategoriye geç
-            break;
-        }
-        
+        if (empty($data)) { break; }
         $pageMovies = 0;
         foreach ($data as $item) {
-            if (isset($item['sources']) && is_array($item['sources'])) {
+            if (!empty($item['sources']) && is_array($item['sources'])) {
                 foreach ($item['sources'] as $source) {
                     if (($source['type'] ?? '') === 'm3u8' && !empty($source['url'])) {
+                        $totalMovies++;
                         $pageMovies++;
                         $title = $item['title'] ?? 'İsimsiz Film';
                         $image = $item['image'] ?? '';
-                        
                         $moviesContent .= "#EXTINF:-1 tvg-id=\"{$item['id']}\" tvg-name=\"$title\" tvg-logo=\"$image\" group-title=\"Film - $catName\",$title\n";
                         $moviesContent .= "#EXTVLCOPT:http-user-agent=$m3uUserAgent\n";
                         $moviesContent .= "#EXTVLCOPT:http-referrer=$referer\n";
@@ -161,80 +146,57 @@ foreach ($movieCategories as $catId => $catName) {
                 }
             }
         }
-        $totalMovies += $pageMovies;
-        
-        if ($pageMovies === 0) {
-            // Bu sayfada film yoksa döngüyü kırıp diğer kategoriye geç
-            break; 
-        }
-        sleep(1); // API'yi yormamak için kısa bir bekleme
+        if ($pageMovies === 0) { break; }
+        sleep(1);
     }
 }
-echo "✅ Filmler: Toplam $totalMovies film listeye eklendi.\n";
-writeM3UFile($outputDir . 'filmler.m3u', $moviesContent, $totalMovies);
-
+writeM3UFile($outputDir . 'filmler.m3u', $moviesContent, $totalMovies, "Filmler");
 
 // --- 3. DİZİLER LİSTESİ OLUŞTURMA ---
-
-echo "📺 Diziler Alınıyor...\n";
+echo "--- BÖLÜM 3: DİZİLER ---\n";
 $seriesContent = "#EXTM3U\n";
-$totalSeries = 0;
-$maxPages = 50; // Taranacak maksimum sayfa sayısı
-
-for ($page = 0; $page < $maxPages; $page++) {
-    $apiUrl = "$mainUrl/api/serie/by/filtres/0/created/$page/$swKey";
-    echo " -> Sayfa $page taranıyor...\n";
-
-    $data = fetchData($apiUrl, $context);
-    if (empty($data)) {
-        echo "   -> Veri bulunamadı. Dizi işlemi tamamlandı.\n";
+$totalEpisodes = 0;
+for ($page = 0; $page < 50; $page++) {
+    echo " -> Ana Dizi Listesi Sayfa $page taranıyor...\n";
+    $seriesListApiUrl = "$mainUrl/api/serie/by/filtres/0/created/$page/$swKey";
+    $seriesList = fetchData($seriesListApiUrl, $context);
+    if (empty($seriesList)) {
+        echo "   -> Ana dizi listesinde veri kalmadı. Dizi işlemi tamamlandı.\n";
         break;
     }
-    
-    $pageSeries = 0;
-    foreach ($data as $item) {
-        // Genellikle dizilerde bölümler ayrı bir API çağrısı ile gelir.
-        // Bu betik, ana dizi linkini ekler.
-        // Eğer `sources` anahtarı doğrudan dizi listesinde m3u8 içeriyorsa ekleyecektir.
-        if (isset($item['sources']) && is_array($item['sources'])) {
-            foreach ($item['sources'] as $source) {
-                if (($source['type'] ?? '') === 'm3u8' && !empty($source['url'])) {
-                     $pageSeries++;
-                    $title = $item['title'] ?? 'İsimsiz Dizi';
-                    $image = $item['image'] ?? '';
-                    
-                    $seriesContent .= "#EXTINF:-1 tvg-id=\"{$item['id']}\" tvg-name=\"$title\" tvg-logo=\"$image\" group-title=\"Diziler\",$title\n";
-                    $seriesContent .= "#EXTVLCOPT:http-user-agent=$m3uUserAgent\n";
-                    $seriesContent .= "#EXTVLCOPT:http-referrer=$referer\n";
-                    $seriesContent .= "{$source['url']}\n";
+    foreach ($seriesList as $series) {
+        $seriesId = $series['id'] ?? null;
+        $seriesTitle = $series['title'] ?? 'İsimsiz Dizi';
+        if (!$seriesId) continue;
+        echo "   -> Dizi işleniyor: '$seriesTitle' (ID: $seriesId)\n";
+        $seasonsApiUrl = "$mainUrl/api/season/by/serie/$seriesId/$swKey";
+        $seasonsData = fetchData($seasonsApiUrl, $context);
+        if (empty($seasonsData)) {
+            echo "     -> Uyarı: Bu dizi için sezon bulunamadı.\n";
+            continue;
+        }
+        foreach ($seasonsData as $season) {
+            $seasonTitle = $season['title'] ?? 'Bilinmeyen Sezon';
+            if (empty($season['episodes']) || !is_array($season['episodes'])) continue;
+            foreach ($season['episodes'] as $episode) {
+                if (empty($episode['sources']) || !is_array($episode['sources'])) continue;
+                foreach ($episode['sources'] as $source) {
+                    if (($source['type'] ?? '') === 'm3u8' && !empty($source['url'])) {
+                        $totalEpisodes++;
+                        $episodeTitle = $episode['title'] ?? 'Bilinmeyen Bölüm';
+                        $fullTitle = "$seriesTitle - $seasonTitle - $episodeTitle";
+                        $seriesContent .= "#EXTINF:-1 tvg-id=\"{$episode['id']}\" tvg-name=\"$fullTitle\" tvg-logo=\"{$series['image']}\" group-title=\"$seriesTitle\",$fullTitle\n";
+                        $seriesContent .= "#EXTVLCOPT:http-user-agent=$m3uUserAgent\n";
+                        $seriesContent .= "#EXTVLCOPT:http-referrer=$referer\n";
+                        $seriesContent .= "{$source['url']}\n";
+                    }
                 }
             }
         }
+        sleep(1);
     }
-    echo "   -> Bu sayfadan $pageSeries dizi eklendi.\n";
-    $totalSeries += $pageSeries;
-    
-    if ($pageSeries === 0 && !empty($data)) {
-        // Veri geldi ama kaynak (source) bulunamadı.
-        // Bu normal bir durum olabilir, dizi bölümleri farklı bir mantıkla çalışıyorsa.
-    }
-
-    sleep(1); // API'yi yormamak için kısa bir bekleme
 }
-echo "✅ Diziler: Toplam $totalSeries dizi listeye eklendi.\n";
-writeM3UFile($outputDir . 'diziler.m3u', $seriesContent, $totalSeries);
+writeM3UFile($outputDir . 'diziler.m3u', $seriesContent, $totalEpisodes, "Dizi Bölümleri");
 
-
-// --- BİTİŞ ---
-$totalItems = $totalChannels + $totalMovies + $totalSeries;
 echo "🎉 TÜM İŞLEMLER TAMAMLANDI!\n";
-echo "========================================\n";
-echo "📊 GENEL İSTATİSTİKLER:\n";
-echo "----------------------------------------\n";
-echo "📺 Canlı TV Kanalları: $totalChannels\n";
-echo "🎬 Filmler: $totalMovies\n";
-echo "📺 Diziler: $totalSeries\n";
-echo "🏆 Toplam İçerik Sayısı: $totalItems\n";
-echo "========================================\n";
-
 ?>
