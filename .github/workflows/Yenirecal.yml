@@ -1,0 +1,70 @@
+name: yeni rectv
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */12 * * *'
+
+jobs:
+  generate-m3u:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x' # Python sürümünü belirtmek iyi bir pratiktir
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.2'
+
+    - name: Install Python dependencies
+      run: |
+        pip install requests firebase-admin
+
+    # Bu adımlar config dosyasını oluşturmak için aynı kalıyor
+    - name: Parse RecTV.kta from YOUR repository
+      run: |
+        python scripts/parse-rec-tv.py
+    
+    - name: Get Firebase config dynamically
+      env:
+        FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        FIREBASE_UID: ${{ secrets.FIREBASE_UID }}
+      run: |
+        python scripts/firebase-auth.py
+
+    - name: Get API config from Firebase
+      run: |
+        python scripts/get-api-config.py
+
+    # --- DEĞİŞİKLİK 1: Yeni PHP betiğini çalıştır ---
+    - name: Generate M3U playlists
+      run: |
+        echo "M3U playlistleri oluşturuluyor..."
+        # Eski betik yerine yeni betiği çalıştırıyoruz
+        php scripts/guncel-m3u-olusturucu.php
+        echo "M3U oluşturma tamamlandı"
+
+    # --- DEĞİŞİKLİK 2: Oluşturulan üç yeni dosyayı commit et ---
+    - name: Commit and push M3U playlists
+      run: |
+        echo "M3U dosyaları commit ediliyor..."
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        # Eski, artık kullanılmayan dosyayı depodan kaldır (varsa)
+        git rm --ignore-unmatch rectv-playlist.m3u
+        
+        # Yeni oluşturulan üç dosyayı ekle
+        git add canli-tv.m3u filmler.m3u diziler.m3u
+        
+        # Commit mesajını çoğul yapabiliriz
+        git commit -m "Auto-update M3U playlists ($(date +'%Y-%m-%d %H:%M'))" || echo "No changes to commit"
+        git push
+        echo "Commit tamamlandı
