@@ -5,7 +5,7 @@ import os
 
 def download_rec_tv_kta():
     """Kendi reponuzdaki RecTV.kta dosyasını indir ve analiz et"""
-    url = "https://raw.githubusercontent.com/koprulu555/rec3/main/scripts/RecTV.kta"
+    url = "https://raw.githubusercontent.com/ahmet21ahmet/F-n/main/scripts/RecTV.kta"
     
     try:
         response = requests.get(url, timeout=15)
