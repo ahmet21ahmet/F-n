@@ -48,7 +48,7 @@ jobs:
       run: |
         echo "M3U playlistleri oluşturuluyor..."
         # Eski betik yerine yeni betiği çalıştırıyoruz
-        php scripts/guncel-m3u-olusturucu.php
+        php scripts/generate-m3u.php
         echo "M3U oluşturma tamamlandı"
 
     # --- DEĞİŞİKLİK 2: Oluşturulan üç yeni dosyayı commit et ---
