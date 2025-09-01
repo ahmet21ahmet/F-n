@@ -1,3 +1,7 @@
+# Bu dosyada herhangi bir değişiklik yapmanıza gerek yok.
+# Sadece .gitignore dosyasını eklemeniz yeterli.
+# Bu dosya referans olması için eklenmiştir.
+
 name: rec yeni Playlists
 
 on:
@@ -13,15 +17,15 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.x'
-
     - name: Setup PHP
       uses: shivammathur/setup-php@v2
       with:
         php-version: '8.2'
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
 
     - name: Install Python dependencies
       run: pip install requests firebase-admin
@@ -32,7 +36,6 @@ jobs:
         FIREBASE_UID: ${{ secrets.FIREBASE_UID }}
       run: |
         cd scripts
-        python parse-rec-tv.py
         python firebase-auth.py
         python get-api-config.py
 
@@ -40,21 +43,17 @@ jobs:
       run: |
         php scripts/generate-m3u.php
 
-    # --- DEĞİŞİKLİK: Commit adımı güncellendi ---
     - name: Commit and push M3U playlists
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         
-        # Artık kullanılmayan ana dizindeki dosyaları temizle (varsa)
-        git rm --ignore-unmatch canli-tv.m3u filmler.m3u diziler.m3u rectv-playlist.m3u
+        git add scripts/*.m3u
 
-        # Dosyaların 'scripts' klasöründe var olup olmadığını kontrol et
-        if [ -f "scripts/canli-tv.m3u" ]; then
-          # Dosyaları 'scripts' klasöründen ekle
-          git add scripts/canli-tv.m3u scripts/filmler.m3u scripts/diziler.m3u
+        if ! git diff --cached --quiet; then
+          echo "✅ Değişiklikler tespit edildi, commit ve push yapılıyor..."
           git commit -m "Auto-update M3U playlists in /scripts ($(date +'%Y-%m-%d %H:%M'))"
           git push
         else
-          echo "M3U dosyaları oluşturulmadığı için commit atlanıyor."
+          echo "ℹ️ Dosyalarda kayda değer bir değişiklik bulunamadı, commit atlanıyor."
         fi
