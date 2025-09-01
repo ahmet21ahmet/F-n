@@ -8,8 +8,7 @@ on:
 
   # 2. Zamanlanmış görev (Cron Job)
   schedule:
-    # Her gün UTC saatiyle 03:00'da (Türkiye saatiyle yaklaşık sabah 06:00) çalışır.
-    # Zamanlamayı https://crontab.guru/ adresinden istediğiniz gibi ayarlayabilirsiniz.
+    # Her gün UTC saatiyle 03:00'da çalışır.
     - cron: '0 3 * * *'
 
 # İş akışında çalışacak görevler
@@ -22,7 +21,6 @@ jobs:
     # Görevin adımları
     steps:
       # Adım 1: Depo kodlarını sanal makineye indirir.
-      # Bu sayede hdfilm.py betiğine erişebiliriz.
       - name: Depoyu Kopyala
         uses: actions/checkout@v4
 
@@ -32,25 +30,27 @@ jobs:
         with:
           python-version: '3.10' # Kullanılacak Python sürümü
 
-      # Adım 3: Python betiğinin ihtiyaç duyduğu kütüphaneleri yükler.
+      # Adım 3: Selenium'un çalışması için Google Chrome tarayıcısını kurar.
+      - name: Google Chrome'u Kur
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
+      # Adım 4: Gerekli kütüphaneleri requirements.txt dosyasından yükler.
       - name: Gerekli Kutuphaneleri Yukle
         run: |
           python -m pip install --upgrade pip
-          pip install requests beautifulsoup4
+          pip install -r requirements.txt
 
-      # Adım 4: Python betiğini çalıştırarak movies.m3u dosyasını oluşturur/günceller.
+      # Adım 5: Python betiğini çalıştırarak movies.m3u dosyasını oluşturur/günceller.
       - name: Film Listesini Guncelle
         run: python hdfilm.py
 
-      # Adım 5: Oluşturulan movies.m3u dosyasını depoya kaydeder (commit ve push).
-      # Bu adım, depoya yazma iznini sağlar.
+      # Adım 6: Oluşturulan movies.m3u dosyasını depoya kaydeder (commit ve push).
       - name: Guncellenen M3U Dosyasini Depoya Kaydet
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          # Commit mesajı
           commit_message: "Otomatik M3U Oynatma Listesi Guncellemesi"
-          # Sadece movies.m3u dosyasındaki değişiklikleri dikkate al
-          file_pattern: movies.m3U
-          # Commit yapan kullanıcının adı ve e-postası
+          file_pattern: movies.m3u
           commit_user_name: GitHub Actions Bot
           commit_user_email: actions@github.com
