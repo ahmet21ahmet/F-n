@@ -23,9 +23,7 @@ $m3uUserAgent = 'googleusercontent';
 
 echo "🎬 M3U Oluşturucu Başlatılıyor...\n";
 
-// --- DEĞİŞİKLİK: Çıktı klasörü güncellendi ---
-// __DIR__ betiğin kendi klasörünü (/scripts) verir.
-// Dosyalar artık doğrudan 'scripts' klasörüne kaydedilecek.
+// Çıktı klasörü betiğin kendi klasörüdür (/scripts)
 $outputDir = __DIR__ . '/';
 echo "ℹ️ M3U dosyaları şu konuma kaydedilecek: $outputDir\n\n";
 
