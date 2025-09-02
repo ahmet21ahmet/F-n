@@ -1,5 +1,5 @@
 # Bu GitHub Actions iş akışının adı
-name: Film Listesi Oluşturucu
+name: HD film Listesi Oluşturucu
 
 # İş akışının ne zaman tetikleneceğini belirler
 on:
