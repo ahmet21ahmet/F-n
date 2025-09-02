@@ -1,56 +1,66 @@
-# İş akışının adı (GitHub Actions arayüzünde görünecek)
-name: HD film M3U Film Listesi Guncelleyici
+# Bu GitHub Actions iş akışının adı
+name: Film Listesi Oluşturucu
 
-# Bu iş akışını tetikleyecek olaylar
+# İş akışının ne zaman tetikleneceğini belirler
 on:
   # 1. Manuel olarak "Run workflow" butonu ile çalıştırmayı sağlar
   workflow_dispatch:
 
-  # 2. Zamanlanmış görev (Cron Job)
+  # 2. Zamanlanmış olarak çalıştırır (cron job)
+  # Bu örnek her gün UTC 03:00'da çalışır (Türkiye saati ile sabah 06:00)
+  # Zamanlamayı istediğiniz gibi değiştirebilirsiniz. Cron formatı: Dakika Saat Gün Ay HaftaGünü
   schedule:
-    # Her gün UTC saatiyle 03:00'da çalışır.
     - cron: '0 3 * * *'
 
-# İş akışında çalışacak görevler
+# İş akışında çalışacak görevleri tanımlar
 jobs:
-  # "update-playlist" adında bir görev tanımlıyoruz
-  update-playlist:
-    # Görevin çalışacağı sanal makine türü
+  build-and-commit:
+    # Görevin çalışacağı sanal makine ortamı
     runs-on: ubuntu-latest
+
+    # GÖREV İÇİN GEREKLİ İZİNLER
+    # Bu bölüm, action'ın deponuza kod göndermesine (commit/push) izin vermek için KRİTİKTİR.
+    permissions:
+      contents: write
 
     # Görevin adımları
     steps:
-      # Adım 1: Depo kodlarını sanal makineye indirir.
-      - name: Depoyu Kopyala
+      # 1. Adım: Depo dosyalarını sanal makineye indirir
+      # Bu sayede Python betiğinize erişebiliriz.
+      - name: Depoyu Klonla
         uses: actions/checkout@v4
 
-      # Adım 2: Python ortamını kurar.
+      # 2. Adım: Python ortamını kurar
+      # Belirtilen Python versiyonunu hazırlar.
       - name: Python'u Kur
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10' # Kullanılacak Python sürümü
+          python-version: '3.11' # Python versiyonunu projenize göre değiştirebilirsiniz
 
-      # Adım 3: Selenium'un çalışması için Google Chrome tarayıcısını kurar.
-      - name: Google Chrome'u Kur
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
-
-      # Adım 4: Gerekli kütüphaneleri requirements.txt dosyasından yükler.
-      - name: Gerekli Kutuphaneleri Yukle
+      # 3. Adım: Gerekli Python kütüphanelerini yükler
+      # requirements.txt yerine doğrudan pip install kullanıyoruz.
+      - name: Bağımlılıkları Yükle
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install aiohttp beautifulsoup4
 
-      # Adım 5: Python betiğini çalıştırarak movies.m3u dosyasını oluşturur/günceller.
-      - name: Film Listesini Guncelle
+      # 4. Adım: Python betiğini çalıştırarak m3u dosyasını oluşturur
+      - name: Film Listesini Oluştur
         run: python hdfilm.py
 
-      # Adım 6: Oluşturulan movies.m3u dosyasını depoya kaydeder (commit ve push).
-      - name: Guncellenen M3U Dosyasini Depoya Kaydet
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Otomatik M3U Oynatma Listesi Guncellemesi"
-          file_pattern: movies.m3u
-          commit_user_name: GitHub Actions Bot
-          commit_user_email: actions@github.com
+      # 5. Adım: Değişiklikleri depoya kaydeder ve gönderir (Commit & Push)
+      - name: Değişiklikleri Depoya Gönder
+        run: |
+          # Git için kullanıcı adı ve e-posta yapılandırması
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
+          # Oluşturulan m3u dosyasını Git'e ekle
+          git add movies.m3u
+          
+          # Eğer dosyada değişiklik varsa commit at. Değişiklik yoksa bu adımı atlar.
+          # Bu, gereksiz ve boş commit'leri engeller.
+          git diff --quiet --exit-code movies.m3u || git commit -m "Film listesi güncellendi $(date +'%Y-%m-%d %H:%M:%S')"
+          
+          # Commit'i ana dala (main/master) gönder
+          git push
