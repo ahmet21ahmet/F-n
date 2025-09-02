@@ -1,66 +1,68 @@
-# Bu GitHub Actions iş akışının adı
-name: HD film Listesi Oluşturucu
+# İş akışının adı
+name: HD Film Listesi Güncelleyici
 
-# İş akışının ne zaman tetikleneceğini belirler
 on:
-  # 1. Manuel olarak "Run workflow" butonu ile çalıştırmayı sağlar
+  # Her 6 saatte bir otomatik olarak çalıştırır
+  schedule:
+    - cron: '0 */6 * * *'
+  # Manuel çalıştırma butonu ekler
   workflow_dispatch:
 
-  # 2. Zamanlanmış olarak çalıştırır (cron job)
-  # Bu örnek her gün UTC 03:00'da çalışır (Türkiye saati ile sabah 06:00)
-  # Zamanlamayı istediğiniz gibi değiştirebilirsiniz. Cron formatı: Dakika Saat Gün Ay HaftaGünü
-  schedule:
-    - cron: '0 3 * * *'
-
-# İş akışında çalışacak görevleri tanımlar
 jobs:
-  build-and-commit:
-    # Görevin çalışacağı sanal makine ortamı
+  update-m3u:
     runs-on: ubuntu-latest
 
-    # GÖREV İÇİN GEREKLİ İZİNLER
-    # Bu bölüm, action'ın deponuza kod göndermesine (commit/push) izin vermek için KRİTİKTİR.
+    # Depoya yazma izni (commit ve push için zorunludur)
     permissions:
       contents: write
 
-    # Görevin adımları
     steps:
       # 1. Adım: Depo dosyalarını sanal makineye indirir
-      # Bu sayede Python betiğinize erişebiliriz.
       - name: Depoyu Klonla
         uses: actions/checkout@v4
 
-      # 2. Adım: Python ortamını kurar
-      # Belirtilen Python versiyonunu hazırlar.
+      # 2. Adım: Python 3.9 ortamını kurar
       - name: Python'u Kur
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11' # Python versiyonunu projenize göre değiştirebilirsiniz
+          python-version: '3.9'
 
       # 3. Adım: Gerekli Python kütüphanelerini yükler
-      # requirements.txt yerine doğrudan pip install kullanıyoruz.
       - name: Bağımlılıkları Yükle
         run: |
           python -m pip install --upgrade pip
-          pip install aiohttp beautifulsoup4
+          pip install beautifulsoup4 aiohttp
 
       # 4. Adım: Python betiğini çalıştırarak m3u dosyasını oluşturur
-      - name: Film Listesini Oluştur
+      # Betik adının "hdfilm.py" olduğunu varsayıyoruz.
+      - name: HD Film Listesini Oluştur
         run: python hdfilm.py
 
-      # 5. Adım: Değişiklikleri depoya kaydeder ve gönderir (Commit & Push)
+      # 5. Adım: Oluşturulan dosyayı yeniden adlandırır, commit'ler ve gönderir
       - name: Değişiklikleri Depoya Gönder
         run: |
-          # Git için kullanıcı adı ve e-posta yapılandırması
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          
-          # Oluşturulan m3u dosyasını Git'e ekle
-          git add movies.m3u
-          
-          # Eğer dosyada değişiklik varsa commit at. Değişiklik yoksa bu adımı atlar.
-          # Bu, gereksiz ve boş commit'leri engeller.
-          git diff --quiet --exit-code movies.m3u || git commit -m "Film listesi güncellendi $(date +'%Y-%m-%d %H:%M:%S')"
-          
-          # Commit'i ana dala (main/master) gönder
-          git push
+          # Önce betiğin 'movies.m3u' adıyla bir dosya oluşturup oluşturmadığını kontrol et
+          if [ -f "movies.m3u" ]; then
+            echo "'movies.m3u' dosyası bulundu, işleme devam ediliyor."
+            
+            # Git için kullanıcı adı ve e-posta yapılandırması
+            git config --global user.name 'github-actions[bot]'
+            git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+            
+            # İstediğiniz yeni M3U dosya adı
+            mv movies.m3u hdfilmler.m3u
+            
+            # Yeni dosyayı Git'e ekle
+            git add hdfilmler.m3u
+            
+            # Değişiklik varsa commit at, yoksa "Değişiklik yok" mesajı bas
+            git commit -m "HD film listesi güncellendi" || echo "Değişiklik yok"
+            
+            # Ana daldaki olası değişikliklerle çakışmayı önlemek için pull --rebase
+            git pull --rebase origin main || echo "Ana depoda yeni değişiklik yok"
+            
+            # Değişiklikleri depoya gönder
+            git push
+          else
+            echo "'movies.m3u' dosyası oluşturulmadı, bu nedenle commit atlanıyor."
+          fi
