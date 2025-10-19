@@ -5,7 +5,8 @@ on:
     branches:
       - main
   schedule:
-    - cron: "0 12 * * *"  # Her gün 12:00 UTC'de çalıştır
+    # Her saat başı çalıştır (0. dakikada)
+    - cron: "0 * * * *"
 
 jobs:
   build-and-push:
