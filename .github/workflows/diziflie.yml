@@ -1,0 +1,55 @@
+# Bu GitHub Actions iş akışı, Python betiğini çalıştırarak M3U çalma listesi oluşturur
+# ve bunu otomatik olarak depoya kaydeder.
+
+name: M3U Playlist Oluşturucu
+
+# Bu iş akışının ne zaman çalışacağını belirleyen tetikleyiciler
+on:
+  # 1. Her gün gece 03:00'da otomatik olarak çalıştır (zamanı değiştirebilirsiniz)
+  schedule:
+    - cron: '0 3 * * *'
+  
+  # 2. GitHub Actions sekmesinden manuel olarak çalıştırma imkanı sunar
+  workflow_dispatch:
+
+# İş akışında çalıştırılacak adımlar
+jobs:
+  build-playlist:
+    # İşin çalışacağı sanal makine türü
+    runs-on: ubuntu-latest
+    
+    # Bu işin depoya yazma iznine sahip olmasını sağlar
+    permissions:
+      contents: write
+
+    steps:
+      # 1. Adım: Depodaki kodları sanal makineye indirir
+      - name: Depoyu Klonla
+        uses: actions/checkout@v4
+
+      # 2. Adım: Python 3.9 ortamını kurar
+      - name: Python'u Kur
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      # 3. Adım: Gerekli Python kütüphanelerini yükler
+      - name: Bağımlılıkları Yükle
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 4. Adım: Python betiğini çalıştırarak playlist.m3u dosyasını oluşturur
+      # Hiçbir URL verilmediği için betik, varsayılan kategorileri tarayacaktır.
+      - name: M3U Oluşturucu Betiğini Çalıştır
+        run: python dizilife.py --output playlist.m3u --verbose
+
+      # 5. Adım: Oluşturulan playlist.m3u dosyasını depoya kaydeder (commit ve push)
+      - name: Değişiklikleri Depoya Kaydet
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add playlist.m3u
+          # Eğer dosya değişmediyse hata vermemesi için `|| exit 0` ekleniyor
+          git commit -m "Otomatik M3U çalma listesi güncellendi" || exit 0
+          git push
