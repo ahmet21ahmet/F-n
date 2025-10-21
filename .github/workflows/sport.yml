@@ -36,9 +36,9 @@ jobs:
           pip install requests beautifulsoup4 zstandard
 
       # 4. Adım: Python script'ini çalıştırır (GÜNCELLENDİ)
-      # Script adını 'istplay_sports_categorized.py' olarak değiştirdik.
+      # Script adını 'a.py' olarak değiştirdik.
       - name: Run M3U generator script
-        run: python istplay_sports_categorized.py
+        run: python a.py
 
       # 5. Adım: Oluşturulan M3U dosyasını repoya commit'leyip push'lar
       - name: Commit and Push M3U file
