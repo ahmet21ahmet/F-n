@@ -1,7 +1,7 @@
 # Bu GitHub Actions iş akışı, Python betiğini çalıştırarak M3U çalma listesi oluşturur
 # ve bunu otomatik olarak depoya kaydeder.
 
-name: M3U Playlist Oluşturucu
+name: dizi lifrM3U Playlist Oluşturucu
 
 # Bu iş akışının ne zaman çalışacağını belirleyen tetikleyiciler
 on:
