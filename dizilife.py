@@ -34,7 +34,7 @@ IFRAME_HEADERS = {
     "Pragma": "no-cache",
 }
 
-DEFAULT_BASE_URL = "https://dizi21.life"
+DEFAULT_BASE_URL = "https://dizi22.life"
 DEFAULT_CATEGORIES = ("/diziler", "/filmler")
 
 
