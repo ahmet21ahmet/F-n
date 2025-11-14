@@ -12,10 +12,19 @@ import requests
 from bs4 import BeautifulSoup
 from Crypto.Cipher import AES  # pip install pycryptodome
 
+# ---------------------------------------------------------------------------
+# YAPILANDIRMA VE HEADERS
+# ---------------------------------------------------------------------------
+
+# İstenilen özel User-Agent ve Origin değerleri
+CUSTOM_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0"
+CUSTOM_ORIGIN = "https://dcdl50eadec6df95.xyz"
+
 SESSION = requests.Session()
 SESSION.headers.update(
     {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
+        "User-Agent": CUSTOM_USER_AGENT,
+        "Origin": CUSTOM_ORIGIN,
         "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 )
@@ -32,11 +41,17 @@ IFRAME_HEADERS = {
     "Sec-Fetch-User": "?1",
     "Cache-Control": "no-cache",
     "Pragma": "no-cache",
+    # Origin başlığı buraya da eklendi
+    "Origin": CUSTOM_ORIGIN,
+    "User-Agent": CUSTOM_USER_AGENT
 }
 
-DEFAULT_BASE_URL = "https://dizi22.life"
+DEFAULT_BASE_URL = "https://dizi21.life"
 DEFAULT_CATEGORIES = ("/diziler", "/filmler")
 
+# ---------------------------------------------------------------------------
+# ŞİFRELEME VE YARDIMCI FONKSİYONLAR
+# ---------------------------------------------------------------------------
 
 def _md5(data: bytes) -> bytes:
     return hashlib.md5(data).digest()
@@ -103,19 +118,14 @@ def _sanitize_title(title: Optional[str], season: Optional[str], episode: Option
     if not title:
         return None
     t = title.strip()
-    # Genelde '|' sonrası site bilgisi gelir, onu at
     if '|' in t:
         t = t.split('|', 1)[0]
-    # Ortak site/anahtar kelimeleri çıkar
     t = re.sub(r'\b(dizi\.life|dizilife|dizi life|izle|film izle|yabancı dizi izle)\b', '', t, flags=re.I)
-    # Fazla açıklama yapan son parçaları kes (ör. " - yabancı ...")
     t = re.sub(r'\s*[-–—:|]\s*[^-–—:|]*$', '', t).strip()
-    # Sezon/bölüm ifadelerini sil (tekrar ekleyeceğiz)
     t = re.sub(r'\b\d{1,2}\s*[.\-]?\s*sezon\b', '', t, flags=re.I)
     t = re.sub(r'\b\d{1,3}\s*[.\-]?\s*bölüm\b', '', t, flags=re.I)
     t = re.sub(r'\bİzle\b', '', t, flags=re.I)
     t = re.sub(r'\s{2,}', ' ', t).strip()
-    # Küçük harfleri düzeltmek istenirse title() yeterli olacaktır
     return t.title() if t else None
 
 
@@ -124,7 +134,8 @@ def resolve_stream(page_url: str) -> Tuple[Optional[str], Optional[str]]:
     main_resp = SESSION.get(page_url, timeout=15)
     main_resp.raise_for_status()
     soup = BeautifulSoup(main_resp.text, "html.parser")
-    # Başlık (dizi ismi) çıkarımı: önce meta/og:title, sonra <title>, sonra h1 veya sınıf isimleri
+    
+    # Başlık Çıkarımı
     show_title = None
     og = soup.select_one("meta[property='og:title'], meta[name='og:title']")
     if og and og.get("content"):
@@ -136,7 +147,6 @@ def resolve_stream(page_url: str) -> Tuple[Optional[str], Optional[str]]:
         if h:
             show_title = h.get_text(strip=True)
 
-    # URL slug fallback (ör. /dizi/gassal/2-sezon-1-bolum/...)
     if not show_title:
         slug_match = re.search(r'/dizi/([^/]+)/', page_url, re.IGNORECASE)
         if slug_match:
@@ -150,12 +160,12 @@ def resolve_stream(page_url: str) -> Tuple[Optional[str], Optional[str]]:
 
     iframe_url = iframe["src"]
     try:
+        # Iframe isteğinde güncel Headerlar (Origin dahil) gönderiliyor
         iframe_resp = SESSION.get(iframe_url, headers=IFRAME_HEADERS, timeout=15, allow_redirects=True)
         iframe_resp.raise_for_status()
         iframe_html = iframe_resp.text
     except requests.RequestException as exc:
         logging.warning("Iframe isteği başarısız (%s): %s", iframe_url, exc)
-        # iframe alınamazsa bu sayfa için akış çözülemez; çağırana (load_sources) show title döner
         return None, show_title
 
     token = None
@@ -192,14 +202,12 @@ def resolve_stream(page_url: str) -> Tuple[Optional[str], Optional[str]]:
     cleaned = _clean_playlist_url(stream_url, token)
     final_url = cleaned if cleaned.startswith("http") else None
 
-    # Sezon ve bölüm çıkarımı: önce URL'den, sonra sayfa içeriğinden
     season = None
     episode = None
     sepi_match = re.search(r'(\d+)-sezon-(\d+)-bolum', page_url, re.IGNORECASE)
     if sepi_match:
         season, episode = sepi_match.groups()
     else:
-        # sayfa içeriğinde "1. Sezon" veya "2. Bölüm" gibi ifadeleri ara
         txt = soup.get_text(" ", strip=True)
         s_match = re.search(r'(\d{1,2})\s*[.\-]?\s*sezon', txt, re.IGNORECASE)
         e_match = re.search(r'(\d{1,3})\s*[.\-]?\s*bölüm', txt, re.IGNORECASE)
@@ -208,10 +216,8 @@ def resolve_stream(page_url: str) -> Tuple[Optional[str], Optional[str]]:
         if e_match:
             episode = e_match.group(1)
 
-    # Show title'ı site-eklerinden ve sezon/bölüm tekrarlarından temizle
     show_title = _sanitize_title(show_title, season, episode)
 
-    # Gösterim başlığını birleştir
     display_title = show_title or None
     if display_title and (season or episode):
         parts = []
@@ -220,30 +226,35 @@ def resolve_stream(page_url: str) -> Tuple[Optional[str], Optional[str]]:
         if episode:
             parts.append(f"{episode}. Bölüm")
         display_title = f"{display_title} - {' '.join(parts)}"
-    # Eğer başlık hiç yoksa None döndürülür; çağıran load_sources default isim verebilir.
+    
     return final_url, display_title
 
 
 def build_playlist(entries: Iterable[Tuple[str, str, str, Optional[str]]]) -> str:
+    """
+    M3U dosyasını oluşturur. 
+    Kullanıcının isteği üzerine Referer korunur, ayrıca yeni eklenen Origin
+    ve User-Agent bilgileri oynatıcıya (VLC vb.) aktarılır.
+    """
     lines = ["#EXTM3U"]
     for title, url, referrer, group in entries:
-        # group-title ekle (varsa)
         if group:
-            g = group.replace('"', '')  # tırnaklardan kurtul
+            g = group.replace('"', '')
             lines.append(f'#EXTINF:-1 group-title="{g}",{title}')
         else:
             lines.append(f"#EXTINF:-1,{title}")
+        
+        # Header ayarlarını M3U içine gömüyoruz
         lines.append(f"#EXTVLCOPT:http-user-agent={SESSION.headers.get('User-Agent', '')}")
+        lines.append(f"#EXTVLCOPT:http-origin={SESSION.headers.get('Origin', '')}")
         lines.append(f"#EXTVLCOPT:http-referrer={referrer}")
         lines.append(url)
     return "\n".join(lines) + "\n"
 
 
 def _is_show_page(url: str) -> bool:
-	"""Basit kontrol: /dizi/ içeriyorsa ve doğrudan bölüm işaretleri yoksa show ana sayfası say."""
 	if "/dizi/" not in url:
 		return False
-	# Eğer URL zaten sezon/bölüm veya bölüm ID'si içeriyorsa show sayfası değil
 	if re.search(r'(\d+)-sezon-(\d+)-bolum', url, re.IGNORECASE):
 		return False
 	if re.search(r'/bolum/|/sezon[-/]\d+|/\d{4,}$', url, re.IGNORECASE):
@@ -252,7 +263,6 @@ def _is_show_page(url: str) -> bool:
 
 
 def _is_listing_page(url: str, soup: Optional[BeautifulSoup] = None) -> bool:
-    """Listing sayfası mı? (/diziler, /filmler veya içerik kartı çoksa True)."""
     if "/diziler" in url or "/filmler" in url:
         return True
     if soup is None:
@@ -260,13 +270,11 @@ def _is_listing_page(url: str, soup: Optional[BeautifulSoup] = None) -> bool:
             soup = _get_soup(url)
         except Exception:
             return False
-    # Eğer sayfada çok sayıda içerik kartı varsa listing sayfası kabul et
     cards = soup.select("div.content-card, a.content-card, .content-card")
     return len(cards) >= 5
 
 
 def _collect_shows_from_listing(listing_url: str) -> List[Tuple[str, Optional[str]]]:
-    """Tek bir listing sayfasından tüm show (detay) sayfalarını toplar ve span.credit-value bilgisini alır."""
     shows: List[Tuple[str, Optional[str]]] = []
     seen: Set[str] = set()
     next_page = listing_url
@@ -295,9 +303,7 @@ def _collect_shows_from_listing(listing_url: str) -> List[Tuple[str, Optional[st
             abs_url = urljoin(listing_url, target).rstrip("/")
             if abs_url in seen:
                 continue
-            # group bilgisi card içinde bulunabilir
             group = None
-            # card genellikle bir element; arayalım
             try:
                 credit = card.select_one("span.credit-value")
                 if credit:
@@ -308,7 +314,7 @@ def _collect_shows_from_listing(listing_url: str) -> List[Tuple[str, Optional[st
                 group = None
             seen.add(abs_url)
             shows.append((abs_url, group))
-        # next page
+        
         next_href = None
         for selector in ("a[rel=next]", ".pagination a.next", ".pagination .next a"):
             candidate = soup.select_one(selector)
@@ -323,7 +329,6 @@ def _collect_shows_from_listing(listing_url: str) -> List[Tuple[str, Optional[st
         if next_href:
             next_page = urljoin(listing_url, next_href)
         else:
-            # fallback: next link yoksa URL'deki page parametresini artırmayı dene
             try:
                 parsed = urlparse(next_page)
                 qs = parse_qs(parsed.query)
@@ -346,7 +351,6 @@ def _collect_shows_from_listing(listing_url: str) -> List[Tuple[str, Optional[st
 
 def load_sources(urls: Iterable[str]) -> List[Tuple[str, str, str, Optional[str]]]:
     resolved: List[Tuple[str, str, str, Optional[str]]] = []
-    # Eğer tek bir URL verildi ve bu bir listing ise önce tüm dizilere genişlet
     expanded_urls: List[Tuple[str, Optional[str]]] = []
     for u in urls:
         try:
@@ -369,8 +373,6 @@ def load_sources(urls: Iterable[str]) -> List[Tuple[str, str, str, Optional[str]
             resolved.append((use_title, stream, url, group))
             continue
 
-        # Eğer akış bulunamadıysa ve URL bir show ana sayfasına benziyorsa,
-        # o gösterinin tüm bölümlerini topla ve her bir bölüm için çözmeye çalış.
         if _is_show_page(url):
             logging.info("Show ana sayfası tespit edildi, bölümler toplanıyor: %s", url)
             episode_urls = _collect_episode_urls(url)
@@ -476,7 +478,6 @@ def _collect_episode_urls(show_url: str) -> List[str]:
             episodes.append(episode_url)
         return episodes
 
-    # Eğer episode-card yoksa: sayfadaki tüm <a href> linklerinden bölüm/siyon linklerini seç
     anchors = soup.select("a[href]")
     candidates: List[str] = []
     for a in anchors:
@@ -486,14 +487,12 @@ def _collect_episode_urls(show_url: str) -> List[str]:
         abs_url = urljoin(show_url, href).rstrip("/")
         if abs_url in seen:
             continue
-        # Bölüm/season içeren URL desenleri
         if re.search(r'(\d+)-sezon-(\d+)-bolum', abs_url, re.IGNORECASE) \
            or re.search(r'/bolum/', abs_url, re.IGNORECASE) \
            or re.search(r'/sezon[-/]\d+', abs_url, re.IGNORECASE):
             seen.add(abs_url)
             candidates.append(abs_url)
 
-    # Ek konteyner seçicilerde de arama yap
     if not candidates:
         for selector in (".episodes a[href]", ".episode-list a[href]", ".episodes-list a[href]", ".season a[href]"):
             for a in soup.select(selector):
@@ -506,12 +505,10 @@ def _collect_episode_urls(show_url: str) -> List[str]:
                 seen.add(abs_url)
                 candidates.append(abs_url)
 
-    # Deduplicate ve sezon/bölüm numarasına göre sıralama
     def _ep_key(u: str):
         m = re.search(r'(\d+)-sezon-(\d+)-bolum', u, re.IGNORECASE)
         if m:
             return (int(m.group(1)), int(m.group(2)))
-        # alternatif desenler
         m2 = re.search(r'/sezon[-/](\d+).*?bolum[-/](\d+)', u, re.IGNORECASE)
         if m2:
             return (int(m2.group(1)), int(m2.group(2)))
@@ -534,7 +531,6 @@ def _collect_episode_urls(show_url: str) -> List[str]:
         unique_candidates.sort(key=_ep_key)
         return unique_candidates
 
-    # Hiç bölüm bulunmadıysa, gösterim sayfasını tek bölüm olarak döndür
     return [show_url]
 
 
